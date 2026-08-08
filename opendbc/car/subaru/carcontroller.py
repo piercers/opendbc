@@ -4,6 +4,7 @@ from opendbc.car import Bus, make_tester_present_msg
 from opendbc.car.lateral import apply_driver_steer_torque_limits, common_fault_avoidance
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.subaru import subarucan
+from opendbc.car.subaru.stop_and_go import SubaruStopAndGo
 from opendbc.car.subaru.values import DBC, GLOBAL_ES_ADDR, CanBus, CarControllerParams, SubaruFlags
 
 # FIXME: These limits aren't exact. The real limit is more than likely over a larger time period and
@@ -22,6 +23,7 @@ class CarController(CarControllerBase):
 
     self.p = CarControllerParams(CP)
     self.packer = CANPacker(DBC[CP.carFingerprint][Bus.pt])
+    self.stop_and_go = SubaruStopAndGo(CP)
 
   def update(self, CC, CS, now_nanos):
     actuators = CC.actuators
@@ -135,6 +137,10 @@ class CarController(CarControllerBase):
 
         if self.frame % 2 == 0:
           can_sends.append(subarucan.create_es_static_2(self.packer))
+
+    if self.stop_and_go.enabled:
+      send_resume = self.stop_and_go.update(CC, CS)
+      can_sends.append(self.stop_and_go.create_throttle(self.packer, self.CP, CS.throttle_msg, send_resume))
 
     new_actuators = actuators.as_builder()
     new_actuators.torque = self.apply_torque_last / self.p.STEER_MAX
