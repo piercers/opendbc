@@ -104,6 +104,14 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
   if ((msg->addr == MSG_SUBARU_CruiseControl) && (msg->bus == alt_main_bus)) {
     bool cruise_engaged = (msg->data[5] >> 1) & 1U;
     pcm_cruise_check(cruise_engaged);
+
+    // 2020 Forester (Global Gen 1): Cruise_On is the physical EyeSight
+    // main switch. Keep lateral authorization independent from ACC engagement
+    // only when the explicitly enabled MADS alternative experience is active.
+    if ((alternative_experience & ALT_EXP_ENABLE_MADS) != 0) {
+      acc_main_on = GET_BIT(msg, 40U);
+      controls_allowed_lateral = acc_main_on && heartbeat_engaged && !safety_rx_checks_invalid;
+    }
   }
 
   // update vehicle moving with any non-zero wheel speed

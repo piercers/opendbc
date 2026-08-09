@@ -3,6 +3,7 @@ import enum
 import unittest
 
 from opendbc.car.subaru.values import SubaruSafetyFlags
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.car.structs import CarParams
 from opendbc.safety.tests.libsafety import libsafety_py
 import opendbc.safety.tests.common as common
@@ -171,6 +172,32 @@ class TestSubaruTorqueSafetyBase(TestSubaruSafetyBase, common.DriverTorqueSteeri
 class TestSubaruGen1TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSafetyBase, TestSubaruTorqueSafetyBase):
   FLAGS = 0
   TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS)
+
+
+class TestSubaruGen1MadsSafety(TestSubaruGen1TorqueStockLongitudinalSafety):
+  """Forester Global Gen 1 lateral-only authorization.
+
+  MADS is opt-in and only permits steering while the physical EyeSight main
+  switch is on and the host heartbeat is engaged. ACC itself may be off.
+  """
+  def setUp(self):
+    super().setUp()
+    self.safety.set_alternative_experience(ALTERNATIVE_EXPERIENCE.ENABLE_MADS)
+    self.safety.set_heartbeat_engaged(True)
+
+  def _pcm_main_msg(self, main_on, cruise_engaged=False):
+    values = {"Cruise_On": main_on, "Cruise_Activated": cruise_engaged}
+    return self.packer.make_can_msg_safety("CruiseControl", self.ALT_MAIN_BUS, values)
+
+  def test_main_switch_authorizes_lateral_only(self):
+    self._rx(self._pcm_main_msg(True, cruise_engaged=False))
+    self.assertFalse(self.safety.get_controls_allowed())
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.assertTrue(self._tx(self._torque_cmd_msg(1)))
+
+    self._rx(self._pcm_main_msg(False, cruise_engaged=False))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+    self.assertFalse(self._tx(self._torque_cmd_msg(1)))
 
 
 class TestSubaruGen2TorqueSafetyBase(TestSubaruTorqueSafetyBase):
